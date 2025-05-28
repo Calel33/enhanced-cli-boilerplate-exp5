@@ -29,6 +29,117 @@ This is an enhanced CLI boilerplate that demonstrates integration between AgentH
   - Result summarization by AgentHustle
   - Interactive follow-up suggestions
 
+## 🎨 Agent UI Integration
+
+This boilerplate now includes a **modern web interface** powered by Agent UI, providing a beautiful and intuitive way to interact with your enhanced CLI backend.
+
+### ✨ Agent UI Features
+
+- **🖥️ Modern Chat Interface**: Beautiful, responsive web UI built with Next.js and Tailwind CSS
+- **🔧 Tool Call Visualization**: See exactly which tools are being used and their results in real-time
+- **📊 Interactive Results**: Rich display of tool outputs with proper formatting
+- **💬 Conversation History**: Persistent chat sessions with full context
+- **🎯 Real-time Updates**: Live streaming of AI responses and tool executions
+- **📱 Mobile Responsive**: Works seamlessly on desktop, tablet, and mobile devices
+
+### 🚀 Quick Start with Agent UI
+
+1. **Start the Backend Server**:
+```bash
+npm run start:server
+# Backend runs on http://localhost:8081
+```
+
+2. **Start the Agent UI Frontend**:
+```bash
+cd my-cli-frontend
+npm run dev
+# Frontend runs on http://localhost:3000
+```
+
+3. **Open in Browser**:
+   - Navigate to `http://localhost:3000`
+   - You'll see the Agent UI interface connected to your CLI backend
+   - Start chatting with your enhanced AI assistant!
+
+### 🔗 How Agent UI Works
+
+```
+┌─────────────────┐    HTTP/JSON     ┌──────────────────────────────┐
+│   Agent UI      │ ◄─────────────► │     Enhanced CLI Server      │
+│  (Next.js)      │   Messages      │      (Express.js)            │
+│  Port: 3000     │                 │      Port: 8081              │
+└─────────────────┘                 └──────────────────────────────┘
+                                                    │
+                                    ┌───────────────┼───────────────┐
+                                    │               │               │
+                               ┌────▼────┐    ┌────▼────┐    ┌────▼────┐
+                               │Hustle AI│    │MCP Tools│    │Local    │
+                               │Client   │    │(Smithery│    │Tools    │
+                               │         │    │etc.)    │    │         │
+                               └─────────┘    └─────────┘    └─────────┘
+```
+
+### 🎯 Agent UI Usage Examples
+
+**Bitcoin & Crypto Analysis**:
+```
+💬 "What BRC-20 tokens does this address own: bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
+🔧 → Uses ordiscan_address_brc20 tool
+📊 → Displays formatted token balances with rich UI
+```
+
+**Web Search & Research**:
+```
+💬 "What are the latest developments in Solana DeFi?"
+🔧 → Uses brave-search tool via Smithery
+📊 → Shows search results with clickable links and summaries
+```
+
+**Stock Market Analysis**:
+```
+💬 "Show me Apple's stock performance over the last 30 days"
+🔧 → Uses get-daily-stock-data tool
+📊 → Displays interactive charts and market data
+```
+
+### 🛠️ Agent UI Configuration
+
+The Agent UI is pre-configured to connect to your CLI backend. Key configuration points:
+
+- **Backend Endpoint**: `http://localhost:8081`
+- **API Routes**: `/api/agentui/chat` for main chat interface
+- **Playground APIs**: `/v1/playground/*` for Agent UI compatibility
+- **CORS**: Properly configured for frontend-backend communication
+
+### 📱 Agent UI vs CLI Interface
+
+| Feature | CLI Interface | Agent UI Interface |
+|---------|---------------|-------------------|
+| **Accessibility** | Terminal required | Web browser |
+| **Tool Visualization** | Text output | Rich, interactive display |
+| **Conversation History** | Session-based | Persistent storage |
+| **Mobile Support** | Limited | Full responsive design |
+| **Tool Results** | JSON/text | Formatted, interactive |
+| **User Experience** | Developer-focused | User-friendly |
+| **Setup Complexity** | Simple | Requires frontend setup |
+
+### 🔧 Customizing Agent UI
+
+The Agent UI frontend is fully customizable:
+
+- **Styling**: Modify `tailwind.config.ts` for custom themes
+- **Components**: Extend React components in `src/components/`
+- **API Integration**: Customize `src/api/cli-backend.ts` for different backends
+- **Store Management**: Modify `src/store.ts` for state management
+
+### 📚 Agent UI Documentation
+
+For detailed setup and customization instructions, see:
+- **[recreate.md](recreate.md)**: Complete step-by-step guide for implementing CLI-to-frontend integration
+- **[tutorial.md](tutorial.md)**: Detailed tutorial on Agent UI integration
+- **Agent UI Repository**: [https://github.com/agno-agi/agent-ui](https://github.com/agno-agi/agent-ui)
+
 ## 📚 Documentation
 
 - **[Tool Flow Guide](TOOL_FLOW_GUIDE.md)**: Complete 6-step flow pattern for seamless AgentHustle integration

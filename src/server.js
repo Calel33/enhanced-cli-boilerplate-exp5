@@ -968,7 +968,7 @@ async function handleAgentUiRequest(userMessage, sessionId, history) {
       messageId: aiResponse.messageId || `msg-${Date.now()}`,
       usage: aiResponse.usage || null
     };
-    
+          
   } catch (error) {
     console.error('[AgentUI] Error in handleAgentUiRequest:', error);
     console.error('[AgentUI] Error details:', {
@@ -1073,8 +1073,8 @@ app.post('/v1/playground/agents/:agent_id/runs', async (req, res) => {
         error: error.message,
         created_at: Math.floor(Date.now() / 1000)
       });
-    }
   }
+}
 });
 
 // Sessions endpoints (optional - for storage support)
