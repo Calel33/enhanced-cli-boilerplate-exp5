@@ -900,34 +900,56 @@ app.post('/api/tools/call', async (req, res) => {
   }
 });
 
-// Agent UI Integration Endpoint
-app.post('/api/agentui/chat', async (req, res) => {
-  const { message, sessionId, history } = req.body;
-  
-  console.log(`[AgentUI Interaction] Received message: "${message}" for session: ${sessionId || 'default'}`);
-  
-  try {
-    const agentUiResponse = await handleAgentUiRequest(message, sessionId, history);
-    
-    // Check if the response contains an error
-    if (agentUiResponse.error) {
-      console.error('[AgentUI Chat] Response contains error:', agentUiResponse);
-      res.status(500).json(agentUiResponse);
-    } else {
-    res.json(agentUiResponse);
+/**
+ * Parse tool calls from AgentHustle response (same logic as CLI)
+ */
+function parseToolCalls(content) {
+  const toolRegex = /<tool>(.*?)<\/tool>/gs;
+  const matches = [...content.matchAll(toolRegex)];
+  return matches.map(match => {
+    try {
+      const functionCall = match[1];
+      const toolMatch = functionCall.match(/(\w+)\((.*)\)/s);
+      if (toolMatch) {
+        const [_, toolName, paramsStr] = toolMatch;
+        const params = eval(`(${paramsStr})`);
+        
+        // Map tool names to handle both local and Smithery naming conventions
+        let mappedToolName = toolName;
+        if (toolName === 'brave_web_search' || toolName === 'brave-search') {
+          // Check if we have Smithery brave_web_search available, otherwise use local brave-search
+          mappedToolName = smitheryConnected ? 'brave_web_search' : 'brave-search';
+        } else if (toolName === 'brave_local_search') {
+          mappedToolName = 'brave_local_search';
+        } else if (toolName.startsWith('ordiscan_') || toolName.includes('ordiscan')) {
+          // Handle Ordiscan tool names - they should match exactly
+          mappedToolName = toolName;
+        } else if (toolName.includes('brc20') || toolName.includes('inscription') || toolName.includes('rune')) {
+          // Handle Bitcoin-related tools that might be Ordiscan tools
+          // Try with ordiscan_ prefix if not already present
+          if (!toolName.startsWith('ordiscan_')) {
+            mappedToolName = `ordiscan_${toolName}`;
+          }
+        } else if (toolName.includes('stock') || toolName.includes('get-stock') || toolName.includes('get_stock')) {
+          // Handle Stock Analysis tool names - support both hyphen and underscore formats
+          const hyphenName = toolName.replace(/_/g, '-');
+          mappedToolName = hyphenName; // Default to hyphen format for Smithery compatibility
+        }
+        
+        return {
+          name: mappedToolName,
+          arguments: params
+        };
+      }
+    } catch (error) {
+      console.error('Error parsing tool call:', error);
     }
-  } catch (error) {
-    console.error('[AgentUI Chat Error] Failed to process request:', error);
-    res.status(500).json({
-      role: 'assistant',
-      content: `Sorry, an error occurred on the server: ${error.message}`,
-      created_at: Date.now(),
-    });
-  }
-});
+    return null;
+  }).filter(Boolean);
+}
 
 /**
- * Handle Agent UI chat requests
+ * Handle Agent UI chat requests with tool execution
  * @param {string} userMessage - The user's message
  * @param {string} sessionId - Session identifier
  * @param {Array} history - Conversation history
@@ -941,46 +963,149 @@ async function handleAgentUiRequest(userMessage, sessionId, history) {
     console.log('  - VAULT_ID:', process.env.VAULT_ID || 'NOT SET');
     console.log('  - vaultId variable:', vaultId || 'NOT SET');
     
-    // Step 1: Send simple message to Hustle AI
+    // Step 1: Send message to Hustle AI
     console.log('[AgentUI] Sending message to Hustle AI...');
     console.log('[AgentUI] Using vaultId:', vaultId);
     
-    // Use simple chat format with explicit vaultId
     const aiResponse = await client.chat([
       {
-      role: 'user',
-      content: userMessage
+        role: 'user',
+        content: userMessage
       }
     ], { 
-      vaultId: vaultId || process.env.VAULT_ID || '6888216545'  // Explicit fallback
+      vaultId: vaultId || process.env.VAULT_ID || '6888216545'
     });
     
     console.log('[AgentUI] Received AI response:', aiResponse);
     
-    // Step 2: Format response for Agent UI
-    // The Hustle API returns an object with content, messageId, usage, etc.
     const responseContent = aiResponse.content || aiResponse.message || 'I received your message and I\'m here to help!';
     
-    return {
-        role: 'assistant',
+    // Step 2: Parse tool calls from the response content
+    const toolCalls = parseToolCalls(responseContent);
+    
+    let finalResponse = {
+      role: 'assistant',
       content: responseContent,
       created_at: Date.now(),
       messageId: aiResponse.messageId || `msg-${Date.now()}`,
       usage: aiResponse.usage || null
     };
+
+    // Step 3: Execute tools if any were found
+    if (toolCalls && toolCalls.length > 0) {
+      console.log('[AgentUI] Found tool calls, executing tools...');
+      
+      const toolResults = [];
+      let hasErrors = false;
+      
+      // Execute all tools and collect results
+      for (const toolCall of toolCalls) {
+        console.log(`[AgentUI] Executing tool: ${toolCall.name} with params:`, toolCall.arguments);
+        
+        try {
+          // Call the tool using the existing tool execution endpoint
+          const toolResponse = await axios.post(`http://localhost:${process.env.PORT || 8081}/api/tools/call`, {
+            name: toolCall.name,
+            params: toolCall.arguments
+          });
+          
+          if (toolResponse.data && toolResponse.data.success) {
+            console.log(`[AgentUI] Tool ${toolCall.name} executed successfully`);
+            
+            toolResults.push({
+              toolName: toolCall.name,
+              success: true,
+              result: toolResponse.data.result
+            });
+          } else {
+            console.log(`[AgentUI] Tool ${toolCall.name} execution failed:`, toolResponse.data?.error);
+            hasErrors = true;
+            
+            toolResults.push({
+              toolName: toolCall.name,
+              success: false,
+              error: toolResponse.data?.error || 'Unknown error'
+            });
+          }
+        } catch (error) {
+          console.error(`[AgentUI] Error executing tool ${toolCall.name}:`, error.message);
+          hasErrors = true;
+          
+          toolResults.push({
+            toolName: toolCall.name,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+      
+      // Step 4: Get AI summary of tool results
+      if (toolResults.length > 0) {
+        console.log('[AgentUI] Asking Agent Hustle to analyze tool results...');
+        
+        let followUpPrompt;
+        if (hasErrors) {
+          // Handle mixed success/error results
+          const successfulResults = toolResults.filter(r => r.success);
+          const failedResults = toolResults.filter(r => !r.success);
+          
+          followUpPrompt = `I executed ${toolResults.length} tool(s) with the following results:
+
+SUCCESSFUL TOOLS (${successfulResults.length}):
+${successfulResults.map(r => `- ${r.toolName}: ${JSON.stringify(r.result, null, 2)}`).join('\n')}
+
+FAILED TOOLS (${failedResults.length}):
+${failedResults.map(r => `- ${r.toolName}: ${r.error}`).join('\n')}
+
+Please summarize the successful results for the user, acknowledge any failures, and ask if they would like to do anything further with the data or try alternative approaches for the failed tools.`;
+        } else {
+          // All tools succeeded
+          const resultsString = toolResults.map(r => 
+            `${r.toolName} results: ${JSON.stringify(r.result, null, 2)}`
+          ).join('\n\n');
+          
+          followUpPrompt = `I successfully executed ${toolResults.length} tool(s) and got the following results:
+
+${resultsString}
+
+Please summarize this data for the user and then ask if they would like to do anything further with it.`;
+        }
+        
+        const summaryResponse = await client.chat([
+          { role: 'user', content: followUpPrompt }
+        ], { vaultId });
+        
+        // Update the final response with the AI summary
+        finalResponse.content = summaryResponse.content;
+        
+        // Add tool call information for Agent UI visualization
+        finalResponse.tool_calls = toolResults.map((result, index) => ({
+          id: `tool_${Date.now()}_${index}`,
+          type: 'function',
+          function: {
+            name: result.toolName,
+            arguments: JSON.stringify(toolCalls[index]?.arguments || {})
+          },
+          result: result.success ? result.result : { error: result.error },
+          success: result.success
+        }));
+      }
+    }
+    
+    return finalResponse;
           
   } catch (error) {
     console.error('[AgentUI] Error in handleAgentUiRequest:', error);
     console.error('[AgentUI] Error details:', {
       message: error.message,
       stack: error.stack,
-          vaultId: vaultId,
+      vaultId: vaultId,
       envVaultId: process.env.VAULT_ID
     });
     
     // Return a proper error response instead of throwing
-      return {
-        role: 'assistant',
+    return {
+      role: 'assistant',
       content: `Sorry, I encountered an error: ${error.message}`,
       created_at: Date.now(),
       error: true
@@ -1089,6 +1214,32 @@ app.get('/v1/playground/agents/:agent_id/sessions/:session_id', (req, res) => {
 
 app.delete('/v1/playground/agents/:agent_id/sessions/:session_id', (req, res) => {
   res.status(404).json({ error: 'Session not found' });
+});
+
+// Agent UI Integration Endpoint
+app.post('/api/agentui/chat', async (req, res) => {
+  const { message, sessionId, history } = req.body;
+  
+  console.log(`[AgentUI Interaction] Received message: "${message}" for session: ${sessionId || 'default'}`);
+  
+  try {
+    const agentUiResponse = await handleAgentUiRequest(message, sessionId, history);
+    
+    // Check if the response contains an error
+    if (agentUiResponse.error) {
+      console.error('[AgentUI Chat] Response contains error:', agentUiResponse);
+      res.status(500).json(agentUiResponse);
+    } else {
+      res.json(agentUiResponse);
+    }
+  } catch (error) {
+    console.error('[AgentUI Chat Error] Failed to process request:', error);
+    res.status(500).json({
+      role: 'assistant',
+      content: `Sorry, an error occurred on the server: ${error.message}`,
+      created_at: Date.now(),
+    });
+  }
 });
 
 // Start server
