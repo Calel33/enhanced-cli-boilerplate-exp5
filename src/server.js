@@ -963,16 +963,49 @@ async function handleAgentUiRequest(userMessage, sessionId, history) {
     console.log('  - VAULT_ID:', process.env.VAULT_ID || 'NOT SET');
     console.log('  - vaultId variable:', vaultId || 'NOT SET');
     
-    // Step 1: Send message to Hustle AI
+    // Get available tools for system prompt
+    const toolsResponse = await axios.post(`http://localhost:${process.env.PORT || 8081}/api/tools/list`);
+    const availableTools = toolsResponse.data.tools || [];
+    
+    // Create system prompt with tool instructions
+    const systemPrompt = `You are an AI assistant with access to various tools for crypto analysis, web search, stock data, and Bitcoin ordinals/inscriptions analysis.
+
+AVAILABLE TOOLS:
+${availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
+
+TOOL USAGE FORMAT:
+When you need to use a tool, format your response like this:
+<tool>tool_name({
+  parameter1: "value1",
+  parameter2: "value2"
+})</tool>
+
+EXAMPLES:
+For web search: <tool>brave_web_search({query: "Solana DeFi latest news", count: 5})</tool>
+For crypto token info: <tool>rugcheck({token: "TNSR", chain: "solana"})</tool>
+For Bitcoin address analysis: <tool>ordiscan_address_brc20({address: "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"})</tool>
+For stock data: <tool>get-stock-data({symbol: "AAPL"})</tool>
+
+IMPORTANT RULES:
+1. Always use tools when the user asks for specific data, market information, or analysis
+2. Use the exact tool names from the available tools list
+3. Format tool calls exactly as shown in the examples
+4. You can use multiple tools in one response if needed
+5. After using tools, I will provide you with the results to summarize for the user
+
+Now respond to the user's request:`;
+
+    // Step 1: Send message to Hustle AI with system prompt
     console.log('[AgentUI] Sending message to Hustle AI...');
     console.log('[AgentUI] Using vaultId:', vaultId);
     
-    const aiResponse = await client.chat([
-      {
-        role: 'user',
-        content: userMessage
-      }
-    ], { 
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'user', content: userMessage }
+    ];
+    
+    const aiResponse = await client.chat(messages, { 
       vaultId: vaultId || process.env.VAULT_ID || '6888216545'
     });
     
@@ -982,6 +1015,7 @@ async function handleAgentUiRequest(userMessage, sessionId, history) {
     
     // Step 2: Parse tool calls from the response content
     const toolCalls = parseToolCalls(responseContent);
+    console.log('[AgentUI] Parsed tool calls:', toolCalls);
     
     let finalResponse = {
       role: 'assistant',
@@ -1090,6 +1124,8 @@ Please summarize this data for the user and then ask if they would like to do an
           created_at: Date.now()
         }));
       }
+    } else {
+      console.log('[AgentUI] No tool calls found in response:', responseContent);
     }
     
     return finalResponse;

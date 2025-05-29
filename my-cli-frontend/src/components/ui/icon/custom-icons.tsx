@@ -1,4 +1,5 @@
 import { type FC } from 'react'
+import Image from 'next/image'
 
 export const AgnoIcon: FC = ({ ...props }) => {
   return (
@@ -51,11 +52,11 @@ export const UserIcon: FC = ({ ...props }) => {
 
 export const AgentIcon: FC = ({ ...props }) => {
   return (
-    <img
+    <Image
       src="/BYR2-LtY_400x400.jpg"
       alt="Agent"
-      width="16"
-      height="16"
+      width={16}
+      height={16}
       className="rounded-full object-cover"
       {...props}
     />
