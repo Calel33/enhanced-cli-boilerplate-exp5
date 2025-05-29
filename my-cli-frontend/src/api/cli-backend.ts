@@ -132,16 +132,43 @@ export const convertCLIMessagesToAgentUI = (
 
     // Handle tool calls - convert to Agent UI ToolCall format
     if (msg.tool_calls && msg.tool_calls.length > 0) {
-      agentUIMessage.tool_calls = msg.tool_calls.map(tc => ({
-        role: 'tool' as const,
-        content: tc.function.arguments,
-        tool_call_id: tc.id,
-        tool_name: tc.function.name,
-        tool_args: JSON.parse(tc.function.arguments),
-        tool_call_error: false,
-        metrics: { time: 0 },
-        created_at: msg.created_at
-      }))
+      agentUIMessage.tool_calls = msg.tool_calls.map(tc => {
+        // Check if this is the OpenAI format (with function property)
+        if ('function' in tc && tc.function) {
+          // OpenAI format - convert to our format
+          return {
+            role: 'tool' as const,
+            content: tc.function.arguments,
+            tool_call_id: tc.id,
+            tool_name: tc.function.name,
+            tool_args: JSON.parse(tc.function.arguments || '{}'),
+            tool_call_error: false,
+            metrics: { time: 0 },
+            created_at: msg.created_at
+          }
+        } else {
+          // Direct format - treat as unknown and extract properties safely
+          const directTc = tc as unknown as Record<string, unknown>
+          
+          // Convert tool_args to Record<string, string> as expected by ToolCall interface
+          const toolArgs = directTc.tool_args as Record<string, unknown> || {}
+          const convertedToolArgs: Record<string, string> = {}
+          for (const [key, value] of Object.entries(toolArgs)) {
+            convertedToolArgs[key] = String(value)
+          }
+          
+          return {
+            role: 'tool' as const,
+            content: String(directTc.content || ''),
+            tool_call_id: String(directTc.tool_call_id || directTc.id || ''),
+            tool_name: String(directTc.tool_name || ''),
+            tool_args: convertedToolArgs,
+            tool_call_error: Boolean(directTc.tool_call_error),
+            metrics: (directTc.metrics as { time: number }) || { time: 0 },
+            created_at: Number(directTc.created_at) || msg.created_at
+          }
+        }
+      })
     }
 
     // Handle tool result messages

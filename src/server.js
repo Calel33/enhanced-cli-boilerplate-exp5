@@ -1080,14 +1080,14 @@ Please summarize this data for the user and then ask if they would like to do an
         
         // Add tool call information for Agent UI visualization
         finalResponse.tool_calls = toolResults.map((result, index) => ({
-          id: `tool_${Date.now()}_${index}`,
-          type: 'function',
-          function: {
-            name: result.toolName,
-            arguments: JSON.stringify(toolCalls[index]?.arguments || {})
-          },
-          result: result.success ? result.result : { error: result.error },
-          success: result.success
+          role: 'tool',
+          content: result.success ? JSON.stringify(result.result, null, 2) : JSON.stringify({ error: result.error }, null, 2),
+          tool_call_id: `tool_${Date.now()}_${index}`,
+          tool_name: result.toolName,
+          tool_args: toolCalls[index]?.arguments || {},
+          tool_call_error: !result.success,
+          metrics: { time: 0 }, // TODO: Add actual execution time tracking
+          created_at: Date.now()
         }));
       }
     }
