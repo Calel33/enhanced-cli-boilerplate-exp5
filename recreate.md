@@ -172,47 +172,48 @@ async function handleAgentUiRequest(userMessage, sessionId = null, history = [])
 
 // Tool execution handler
 async function handleToolCalls(aiResponse, originalMessage) {
-    const messages = [];
+    const toolResults = [];
     
-    // Add assistant message with tool calls
-    messages.push({
-        role: 'assistant',
-        content: aiResponse.content || 'I need to use some tools to help you.',
-        tool_calls: aiResponse.toolCalls.map(tool => ({
-            id: tool.toolCallId,
-            type: 'function',
-            function: {
-                name: tool.toolName,
-                arguments: JSON.stringify(tool.args)
-            }
-        })),
-        created_at: Date.now()
-    });
-
-    // Execute each tool and add results
+    // Execute each tool call
     for (const toolCall of aiResponse.toolCalls) {
         try {
-            const toolResult = await executeLocalTool(toolCall.toolName, toolCall.args);
-            
-            messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.toolCallId,
-                tool_name: toolCall.toolName,
-                content: JSON.stringify(toolResult),
-                created_at: Date.now() + 1000
+            const result = await executeLocalTool(toolCall.toolName, toolCall.args);
+            toolResults.push({
+                success: true,
+                result: result,
+                toolName: toolCall.toolName,
+                toolCallId: toolCall.toolCallId
             });
         } catch (error) {
-            messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.toolCallId,
-                tool_name: toolCall.toolName,
-                content: JSON.stringify({ error: error.message }),
-                created_at: Date.now() + 1000
+            toolResults.push({
+                success: false,
+                error: error.message,
+                toolName: toolCall.toolName,
+                toolCallId: toolCall.toolCallId
             });
         }
     }
 
-    return messages;
+    // Format response for Agent UI with tool results in content field
+    const finalResponse = {
+        role: 'assistant',
+        content: aiResponse.content || 'I used some tools to help you.',
+        created_at: Date.now()
+    };
+
+    // Add tool call information for Agent UI visualization
+    finalResponse.tool_calls = toolResults.map((result, index) => ({
+        role: 'tool',
+        content: result.success ? JSON.stringify(result.result, null, 2) : JSON.stringify({ error: result.error }, null, 2),
+        tool_call_id: `tool_${Date.now()}_${index}`,
+        tool_name: result.toolName,
+        tool_args: aiResponse.toolCalls[index]?.args || {},
+        tool_call_error: !result.success,
+        metrics: { time: 0 }, // TODO: Add actual execution time tracking
+        created_at: Date.now()
+    }));
+
+    return finalResponse;
 }
 
 // Local tool execution (implement your tools here)
@@ -396,9 +397,279 @@ class MCPClient {
 module.exports = new MCPClient();
 ```
 
-## 🔄 Step 4: Running the Complete System
+## 🔄 Step 4: Tool Result Display Implementation
 
-### 4.1 Start the Backend
+### 4.1 Backend Tool Result Formatting
+
+Update your backend's tool execution handler to properly format tool results for the frontend:
+
+```javascript
+// In src/server.js - Enhanced tool execution handler
+async function handleToolCalls(aiResponse, originalMessage) {
+    const toolResults = [];
+    
+    // Execute each tool call
+    for (const toolCall of aiResponse.toolCalls) {
+        try {
+            const result = await executeLocalTool(toolCall.toolName, toolCall.args);
+            toolResults.push({
+                success: true,
+                result: result,
+                toolName: toolCall.toolName,
+                toolCallId: toolCall.toolCallId
+            });
+        } catch (error) {
+            toolResults.push({
+                success: false,
+                error: error.message,
+                toolName: toolCall.toolName,
+                toolCallId: toolCall.toolCallId
+            });
+        }
+    }
+
+    // Format response for Agent UI with tool results in content field
+    const finalResponse = {
+        role: 'assistant',
+        content: aiResponse.content || 'I used some tools to help you.',
+        created_at: Date.now()
+    };
+
+    // Add tool call information for Agent UI visualization
+    finalResponse.tool_calls = toolResults.map((result, index) => ({
+        role: 'tool',
+        content: result.success ? JSON.stringify(result.result, null, 2) : JSON.stringify({ error: result.error }, null, 2),
+        tool_call_id: `tool_${Date.now()}_${index}`,
+        tool_name: result.toolName,
+        tool_args: aiResponse.toolCalls[index]?.args || {},
+        tool_call_error: !result.success,
+        metrics: { time: 0 }, // TODO: Add actual execution time tracking
+        created_at: Date.now()
+    }));
+
+    return finalResponse;
+}
+```
+
+### 4.2 Frontend Tool Result Display Component
+
+Create an enhanced tool display component in your Agent UI:
+
+```typescript
+// In my-cli-frontend/src/components/playground/ChatArea/Messages/Messages.tsx
+
+const ToolComponent = memo(({ tools }: ToolCallProps) => {
+  const [isExpanded, setIsExpanded] = useState(false)
+  
+  // Check if this tool call has results
+  const hasResult = tools.content && tools.content.trim() !== ''
+  const toolResult = hasResult ? tools.content : null
+  
+  // Parse tool result if it's a JSON string
+  let parsedResult = null
+  if (toolResult) {
+    try {
+      parsedResult = typeof toolResult === 'string' ? JSON.parse(toolResult) : toolResult
+    } catch {
+      parsedResult = toolResult
+    }
+  }
+  
+  // Determine if tool was successful
+  const isSuccess = !tools.tool_call_error && (!parsedResult || !parsedResult.error)
+  
+  // Create summary for collapsed view
+  const resultSummary = parsedResult ? 
+    (typeof parsedResult === 'object' ? 
+      `${Object.keys(parsedResult).length} properties` : 
+      String(parsedResult).substring(0, 100) + '...') : 
+    'No result'
+  
+  return (
+    <div className="border border-border-primary rounded-lg p-4 bg-background-secondary">
+      {/* Tool Header */}
+      <div 
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          <Icon
+            type={isSuccess ? "check" : "x"}
+            className={`rounded-lg p-1 ${isSuccess ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}
+            size="sm"
+          />
+          <div>
+            <p className="font-medium text-primary">{tools.tool_name}</p>
+            <p className="text-xs text-secondary">
+              {isSuccess ? 'Success' : 'Failed'} • {resultSummary}
+            </p>
+          </div>
+        </div>
+        
+        <Icon
+          type={isExpanded ? "chevron-up" : "chevron-down"}
+          size="sm"
+          color="secondary"
+        />
+      </div>
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="mt-4 space-y-3">
+          {/* Tool Arguments */}
+          {tools.tool_args && Object.keys(tools.tool_args).length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-secondary mb-2">Arguments:</p>
+              <pre className="bg-background-tertiary p-3 rounded text-xs overflow-x-auto">
+                {JSON.stringify(tools.tool_args, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Tool Results */}
+          {hasResult && (
+            <div>
+              <p className="text-sm font-medium text-secondary mb-2">
+                {isSuccess ? 'Result:' : 'Error:'}
+              </p>
+              <pre className={`p-3 rounded text-xs overflow-x-auto ${
+                isSuccess ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+              }`}>
+                {typeof parsedResult === 'object' ? 
+                  JSON.stringify(parsedResult, null, 2) : 
+                  String(parsedResult)
+                }
+              </pre>
+            </div>
+          )}
+
+          {/* Execution Metrics */}
+          {tools.metrics && (
+            <div className="text-xs text-secondary">
+              Execution time: {tools.metrics.time}ms
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+```
+
+### 4.3 CLI Backend Message Conversion
+
+Update the CLI backend adapter to handle tool results properly:
+
+```typescript
+// In my-cli-frontend/src/api/cli-backend.ts
+
+export const convertCLIMessagesToAgentUI = (
+  cliMessages: CLIBackendMessage[]
+): PlaygroundChatMessage[] => {
+  return cliMessages.map((msg) => {
+    const agentUIMessage: PlaygroundChatMessage = {
+      role: msg.role === 'assistant' ? 'agent' : msg.role,
+      content: msg.content || '',
+      created_at: msg.created_at,
+      streamingError: false
+    }
+
+    // Handle tool calls - convert to Agent UI ToolCall format
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      agentUIMessage.tool_calls = msg.tool_calls.map(tc => {
+        // Handle both OpenAI format and direct format
+        if ('function' in tc && tc.function) {
+          // OpenAI format
+          let parsedArgs = {}
+          try {
+            parsedArgs = JSON.parse(tc.function.arguments)
+          } catch {
+            parsedArgs = {}
+          }
+          
+          const convertedArgs: Record<string, string> = {}
+          for (const [key, value] of Object.entries(parsedArgs)) {
+            convertedArgs[key] = String(value)
+          }
+          
+          return {
+            role: 'tool' as const,
+            content: '', // Will be filled by tool execution
+            tool_call_id: tc.id,
+            tool_name: tc.function.name,
+            tool_args: convertedArgs,
+            tool_call_error: false,
+            metrics: { time: 0 },
+            created_at: Date.now()
+          }
+        } else {
+          // Direct format - extract properties safely
+          const directTc = tc as unknown as Record<string, unknown>
+          
+          // Convert tool_args to Record<string, string>
+          const toolArgs = directTc.tool_args as Record<string, unknown> || {}
+          const convertedToolArgs: Record<string, string> = {}
+          for (const [key, value] of Object.entries(toolArgs)) {
+            convertedToolArgs[key] = String(value)
+          }
+          
+          return {
+            role: 'tool' as const,
+            content: String(directTc.content || ''),
+            tool_call_id: String(directTc.tool_call_id || directTc.id || ''),
+            tool_name: String(directTc.tool_name || ''),
+            tool_args: convertedToolArgs,
+            tool_call_error: Boolean(directTc.tool_call_error),
+            metrics: { time: Number(directTc.metrics?.time || 0) },
+            created_at: Number(directTc.created_at || Date.now())
+          }
+        }
+      })
+    }
+
+    return agentUIMessage
+  })
+}
+```
+
+### 4.4 Enhanced Tool Display in Messages
+
+Update the Messages component to show tool calls in a dedicated section:
+
+```typescript
+// In my-cli-frontend/src/components/playground/ChatArea/Messages/Messages.tsx
+
+// Add tool calls section after the main message content
+{message.tool_calls && message.tool_calls.length > 0 && (
+  <div className="flex flex-col gap-4">
+    <div className="flex items-center gap-3">
+      <Tooltip
+        delayDuration={0}
+        content={<p className="text-accent">Tool Calls</p>}
+        side="top"
+      >
+        <Icon
+          type="hammer"
+          className="rounded-lg bg-background-secondary p-1"
+          size="sm"
+          color="secondary"
+        />
+      </Tooltip>
+      <p className="text-xs uppercase text-secondary">Tools Used ({message.tool_calls.length})</p>
+    </div>
+
+    <div className="flex flex-col gap-3 pl-8">
+      {message.tool_calls.map((toolCall, index) => (
+        <ToolComponent key={`${toolCall.tool_call_id}-${index}`} tools={toolCall} />
+      ))}
+    </div>
+  </div>
+)}
+```
+
+## 🔄 Step 5: Running the Complete System
+
+### 5.1 Start the Backend
 
 ```bash
 # In the backend directory
@@ -407,7 +678,7 @@ npm run start:server
 node src/server.js
 ```
 
-### 4.2 Start the Frontend
+### 5.2 Start the Frontend
 
 ```bash
 # In the frontend directory
@@ -416,16 +687,16 @@ npm run dev
 pnpm dev
 ```
 
-### 4.3 Test the Integration
+### 5.3 Test the Integration
 
 1. Open `http://localhost:3000` in your browser
 2. You should see the Agent UI interface
 3. The UI should show "Enhanced CLI Backend" as connected
 4. Try sending a message to test the integration
 
-## 🛠️ Step 5: Key Integration Points
+## 🛠️ Step 6: Key Integration Points
 
-### 5.1 Message Flow
+### 6.1 Message Flow
 
 1. **User Input**: User types in Agent UI
 2. **Frontend**: Sends POST to `/api/agentui/chat`
@@ -434,7 +705,7 @@ pnpm dev
 5. **Response**: Returns formatted messages to Agent UI
 6. **Display**: Agent UI renders conversation with tool calls
 
-### 5.2 Critical Response Format
+### 6.2 Critical Response Format
 
 Agent UI expects messages in this format:
 
@@ -456,7 +727,7 @@ Agent UI expects messages in this format:
 }
 ```
 
-### 5.3 CORS Configuration
+### 6.3 CORS Configuration
 
 Essential for frontend-backend communication:
 
@@ -469,7 +740,7 @@ app.use(cors({
 }));
 ```
 
-## 📝 Step 6: Environment Variables
+## 📝 Step 7: Environment Variables
 
 Create comprehensive `.env` file:
 
@@ -490,15 +761,15 @@ ORDISCAN_API_KEY=your_ordiscan_key
 SMITHERY_API_KEY=your_smithery_key
 ```
 
-## 🔍 Step 7: Testing and Debugging
+## 🔍 Step 8: Testing and Debugging
 
-### 7.1 Test Backend Health
+### 8.1 Test Backend Health
 
 ```bash
 curl http://localhost:8081/health
 ```
 
-### 7.2 Test Chat Endpoint
+### 8.2 Test Chat Endpoint
 
 ```bash
 curl -X POST http://localhost:8081/api/agentui/chat \
@@ -506,7 +777,7 @@ curl -X POST http://localhost:8081/api/agentui/chat \
   -d '{"message": "Hello, test message"}'
 ```
 
-### 7.3 Debug Mode
+### 8.3 Debug Mode
 
 Set `DEBUG=true` in `.env` for detailed logging.
 

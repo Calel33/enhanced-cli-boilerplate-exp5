@@ -37,7 +37,9 @@ This boilerplate now includes a **modern web interface** powered by Agent UI, pr
 
 - **🖥️ Modern Chat Interface**: Beautiful, responsive web UI built with Next.js and Tailwind CSS
 - **🔧 Tool Call Visualization**: See exactly which tools are being used and their results in real-time
-- **📊 Interactive Results**: Rich display of tool outputs with proper formatting
+- **📊 Interactive Tool Results**: Rich display of tool outputs with expandable results, syntax highlighting, and proper formatting
+- **✅ Tool Execution Status**: Visual indicators showing successful/failed tool executions with detailed error information
+- **🔍 Expandable Tool Details**: Click to expand tool calls and see detailed results, arguments, and execution metrics
 - **💬 Conversation History**: Persistent chat sessions with full context
 - **🎯 Real-time Updates**: Live streaming of AI responses and tool executions
 - **📱 Mobile Responsive**: Works seamlessly on desktop, tablet, and mobile devices
@@ -101,6 +103,60 @@ npm run dev
 💬 "Show me Apple's stock performance over the last 30 days"
 🔧 → Uses get-daily-stock-data tool
 📊 → Displays interactive charts and market data
+```
+
+### 🔧 Tool Result Display Features
+
+The Agent UI now provides comprehensive visualization of tool executions:
+
+**📊 Enhanced Tool Visualization**:
+- **Tool Call Cards**: Each tool execution is displayed in a dedicated card with clear visual hierarchy
+- **Success/Error Indicators**: Green checkmarks for successful executions, red X marks for failures
+- **Expandable Results**: Click any tool card to expand and see detailed results
+- **Syntax Highlighting**: JSON results are properly formatted with syntax highlighting
+- **Execution Metrics**: See tool execution time and other performance metrics
+
+**🎯 Interactive Tool Results**:
+```
+🔧 Tool: brave-search
+📝 Arguments: {"query": "Solana DeFi", "count": 5}
+✅ Status: Success
+📊 Results: [Click to expand]
+   ↳ Shows formatted search results with links, descriptions, and metadata
+```
+
+**🔍 Tool Result Examples**:
+
+*Bitcoin Address Analysis*:
+```
+🔧 ordiscan_address_brc20
+✅ Success - Found 3 BRC-20 tokens
+📊 Results:
+   • ORDI: 1,250.5 tokens
+   • SATS: 50,000,000 tokens  
+   • PEPE: 100,000 tokens
+```
+
+*Stock Data Retrieval*:
+```
+🔧 get-stock-data  
+✅ Success - Retrieved AAPL data
+📊 Results:
+   • Current Price: $185.42
+   • Change: +2.15 (+1.17%)
+   • Volume: 45,234,567
+   • Market Cap: $2.89T
+```
+
+*Web Search Results*:
+```
+🔧 brave-search
+✅ Success - Found 5 results
+📊 Results:
+   1. "Solana DeFi TVL Reaches New High" - CoinDesk
+   2. "Top Solana DeFi Protocols in 2024" - DeFiPulse
+   3. "Solana vs Ethereum DeFi Comparison" - CryptoNews
+   [Click to see full results with links and descriptions]
 ```
 
 ### 🛠️ Agent UI Configuration
